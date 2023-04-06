@@ -29,13 +29,14 @@ class EvoParams:
     clip_max: float = jnp.finfo(jnp.float32).max
 
 
-class OpenES(Strategy):
+class PailaES(Strategy):
     def __init__(
         self,
         popsize: int,
         num_dims: Optional[int] = None,
         pholder_params: Optional[Union[chex.ArrayTree, chex.Array]] = None,
         opt_name: str = "adam",
+        elite_ratio: float = 1,
         lrate_init: float = 0.05,
         lrate_decay: float = 1.0,
         lrate_limit: float = 0.001,
@@ -46,9 +47,7 @@ class OpenES(Strategy):
         n_devices: Optional[int] = None,
         **fitness_kwargs: Union[bool, int, float]
     ):
-        """OpenAI-ES (Salimans et al. (2017)
-        Reference: https://arxiv.org/pdf/1703.03864.pdf
-        Inspired by: https://github.com/hardmaru/estool/blob/master/es.py"""
+        """ES algorithm currently present in Paila"""
         super().__init__(
             popsize,
             num_dims,
@@ -58,9 +57,12 @@ class OpenES(Strategy):
             **fitness_kwargs
         )
         assert not self.popsize & 1, "Population size must be even"
+        assert 0 <= elite_ratio <= 1
+        self.elite_ratio = elite_ratio
+        self.elite_popsize = max(1, int(self.popsize / 2 * self.elite_ratio))
         assert opt_name in ["sgd", "adam", "rmsprop", "clipup", "adan"]
         self.optimizer = GradientOptimizer[opt_name](self.num_dims)
-        self.strategy_name = "OpenES"
+        self.strategy_name = "PailaES"
 
         # Set core kwargs es_params (lrate/sigma schedules)
         self.lrate_init = lrate_init
@@ -108,12 +110,14 @@ class OpenES(Strategy):
     ) -> Tuple[chex.Array, EvoState]:
         """`ask` for new parameter candidates to evaluate next."""
         # Antithetic sampling of noise
-        z_plus = jax.random.normal(
+        noise = jax.random.normal(
             rng,
             (int(self.popsize / 2), self.num_dims),
-        )
-        z = jnp.concatenate([z_plus, -1.0 * z_plus])
+        )*state.sigma
+        
+        z = jnp.concatenate([noise, -1.0 * noise])
         x = state.mean + state.sigma * z
+        
         return x, state
 
     def tell_strategy(
@@ -124,14 +128,14 @@ class OpenES(Strategy):
         params: EvoParams,
     ) -> EvoState:
         """`tell` performance data for strategy state update."""
+        
         # Reconstruct noise from last mean/std estimates
-        noise = (x - state.mean) / state.sigma
+        noise = (x - state.mean)[:int(self.popsize/2)]
 
-        fit_1 = fitness[: int(self.popsize / 2)]
-        fit_2 = fitness[int(self.popsize / 2) :]
-        theta_grad = (
-            1.0 / (self.popsize * state.sigma) * jnp.dot(noise.T, fitness)
-        )
+        loss_pos = fitness[: int(self.popsize / 2)]
+        loss_neg = fitness[int(self.popsize / 2) :]
+        es_factor = (loss_pos - loss_neg) / (2 * state.sigma**2)
+        theta_grad = (1.0/self.popsize)*jnp.dot(noise.T, es_factor)
 
         # Grad update using optimizer instance - decay lrate if desired
         mean, opt_state = self.optimizer.step(
