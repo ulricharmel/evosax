@@ -116,7 +116,7 @@ class PailaES(Strategy):
         )*state.sigma
         
         z = jnp.concatenate([noise, -1.0 * noise])
-        x = state.mean + state.sigma * z
+        x = state.mean + z
         
         return x, state
 
