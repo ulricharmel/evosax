@@ -20,7 +20,7 @@ class EvoState:
 @struct.dataclass
 class EvoParams:
     opt_params: OptParams
-    sigma_init: float = 0.03
+    sigma_init: float = 0.04
     sigma_decay: float = 0.999
     sigma_limit: float = 0.01
     init_min: float = 0.0
@@ -29,14 +29,13 @@ class EvoParams:
     clip_max: float = jnp.finfo(jnp.float32).max
 
 
-class ARS(Strategy):
+class OpenES(Strategy):
     def __init__(
         self,
         popsize: int,
         num_dims: Optional[int] = None,
         pholder_params: Optional[Union[chex.ArrayTree, chex.Array]] = None,
-        elite_ratio: float = 1,
-        opt_name: str = "sgd",
+        opt_name: str = "adam",
         lrate_init: float = 0.05,
         lrate_decay: float = 1.0,
         lrate_limit: float = 0.001,
@@ -47,8 +46,9 @@ class ARS(Strategy):
         n_devices: Optional[int] = None,
         **fitness_kwargs: Union[bool, int, float]
     ):
-        """Augmented Random Search (Mania et al., 2018)
-        Reference: https://arxiv.org/pdf/1803.07055.pdf"""
+        """OpenAI-ES (Salimans et al. (2017)
+        Reference: https://arxiv.org/pdf/1703.03864.pdf
+        Inspired by: https://github.com/hardmaru/estool/blob/master/es.py"""
         super().__init__(
             popsize,
             num_dims,
@@ -58,14 +58,9 @@ class ARS(Strategy):
             **fitness_kwargs
         )
         assert not self.popsize & 1, "Population size must be even"
-        # ARS performs antithetic sampling & allows you to select
-        # "b" elite perturbation directions for the update
-        assert 0 <= elite_ratio <= 1
-        self.elite_ratio = elite_ratio
-        self.elite_popsize = max(1, int(self.popsize / 2 * self.elite_ratio))
         assert opt_name in ["sgd", "adam", "rmsprop", "clipup", "adan"]
         self.optimizer = GradientOptimizer[opt_name](self.num_dims)
-        self.strategy_name = "ARS"
+        self.strategy_name = "OpenES"
 
         # Set core kwargs es_params (lrate/sigma schedules)
         self.lrate_init = lrate_init
@@ -100,7 +95,6 @@ class ARS(Strategy):
             minval=params.init_min,
             maxval=params.init_max,
         )
-
         state = EvoState(
             mean=initialization,
             sigma=params.sigma_init,
@@ -132,17 +126,12 @@ class ARS(Strategy):
         """`tell` performance data for strategy state update."""
         # Reconstruct noise from last mean/std estimates
         noise = (x - state.mean) / state.sigma
-        noise_1 = noise[: int(self.popsize / 2)]
+
         fit_1 = fitness[: int(self.popsize / 2)]
         fit_2 = fitness[int(self.popsize / 2) :]
-        elite_idx = jnp.minimum(fit_1, fit_2).argsort()[: self.elite_popsize]
-
-        fitness_elite = jnp.concatenate([fit_1[elite_idx], fit_2[elite_idx]])
-        # Add small constant to ensure non-zero division stability
-        sigma_fitness = jnp.std(fitness_elite) + 1e-05
-        fit_diff = fit_1[elite_idx] - fit_2[elite_idx]
-        fit_diff_noise = jnp.dot(noise_1[elite_idx].T, fit_diff)
-        theta_grad = 1.0 / (self.elite_popsize * sigma_fitness) * fit_diff_noise
+        theta_grad = (
+            1.0 / (self.popsize * state.sigma) * jnp.dot(noise.T, fitness)
+        )
 
         # Grad update using optimizer instance - decay lrate if desired
         mean, opt_state = self.optimizer.step(
