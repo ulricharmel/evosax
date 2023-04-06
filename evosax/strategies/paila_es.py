@@ -135,7 +135,7 @@ class PailaES(Strategy):
         loss_pos = fitness[: int(self.popsize / 2)]
         loss_neg = fitness[int(self.popsize / 2) :]
         es_factor = (loss_pos - loss_neg) / (2 * state.sigma**2)
-        theta_grad = (1.0/self.popsize)*jnp.sum(es_factor[:,None]*noise, axis=0)
+        theta_grad = jnp.mean(es_factor[:,None]*noise, axis=0)
 
         # Grad update using optimizer instance - decay lrate if desired
         mean, opt_state = self.optimizer.step(
