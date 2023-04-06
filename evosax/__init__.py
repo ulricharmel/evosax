@@ -32,6 +32,7 @@ from .strategies import (
     MR15_GA,
     RandomSearch,
     LES,
+    PailaES,
 )
 from .utils import FitnessShaper, ParameterReshaper, ESLog
 from .networks import NetworkMapper
@@ -71,6 +72,7 @@ Strategies = {
     "MR15_GA": MR15_GA,
     "RandomSearch": RandomSearch,
     "LES": LES,
+    "PailaES":PailaES,
 }
 
 __all__ = [
@@ -115,4 +117,5 @@ __all__ = [
     "MR15_GA",
     "RandomSearch",
     "LES",
+    "PailaES",
 ]
