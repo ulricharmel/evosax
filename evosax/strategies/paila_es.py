@@ -1,3 +1,4 @@
+import numpy as np
 import jax
 import jax.numpy as jnp
 import chex
@@ -109,13 +110,37 @@ class PailaES(Strategy):
         self, rng: chex.PRNGKey, state: EvoState, params: EvoParams
     ) -> Tuple[chex.Array, EvoState]:
         """`ask` for new parameter candidates to evaluate next."""
-        # Antithetic sampling of noise
-        noise = jax.random.normal(
-            rng,
-            (int(self.popsize / 2), self.num_dims),
-        )*state.sigma
+
+        # import pdb; pdb.set_trace()
+        d_x = jnp.zeros((int(self.popsize/2), self.num_dims))
+        d_params = self.param_reshaper.reshape(d_x)
+
+        # Extract shapes
+        treedef = jax.tree_util.tree_structure(d_params)
+        shapes = jax.tree_util.tree_map(lambda p: np.asarray(p.shape), d_params)
+
+        # Random keys
+        rng, param_rng = jax.random.split(rng)
+        keys = jax.tree_util.tree_unflatten(
+            treedef, jax.random.split(param_rng, treedef.num_leaves)
+        )
+
+        # Generate noise
+        noise = jax.tree_util.tree_map(jax.random.normal, keys, shapes)
+        scaled_noise = jax.tree_util.tree_map(
+            lambda x: x * state.sigma, noise
+        )
         
-        z = jnp.concatenate([noise, -1.0 * noise])
+        flatten_noise = self.param_reshaper.flatten(scaled_noise)
+
+
+        # Antithetic sampling of noise
+        # noise = jax.random.normal(
+        #     rng,
+        #     (int(self.popsize / 2), self.num_dims),
+        # )*state.sigma
+        
+        z = jnp.concatenate([flatten_noise, -1.0 * flatten_noise])
         x = state.mean + z
         
         return x, state
