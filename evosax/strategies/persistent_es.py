@@ -22,8 +22,8 @@ class EvoState:
 @struct.dataclass
 class EvoParams:
     opt_params: OptParams
-    T: int = 100  # Total inner problem length
-    K: int = 10  # Truncation length for partial unrolls
+    T: int = 320000  # Total inner problem length
+    K: int = 5000  # Truncation length for partial unrolls
     sigma_init: float = 0.1
     sigma_decay: float = 0.999
     sigma_limit: float = 0.1
