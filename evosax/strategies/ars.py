@@ -1,5 +1,6 @@
 import jax
 import jax.numpy as jnp
+import numpy as np
 import chex
 from typing import Tuple, Optional, Union
 from ..strategy import Strategy
@@ -113,11 +114,34 @@ class ARS(Strategy):
         self, rng: chex.PRNGKey, state: EvoState, params: EvoParams
     ) -> Tuple[chex.Array, EvoState]:
         """`ask` for new parameter candidates to evaluate next."""
-        # Antithetic sampling of noise
-        z_plus = jax.random.normal(
-            rng,
-            (int(self.popsize / 2), self.num_dims),
+        
+        d_x = jnp.zeros((int(self.popsize/2), self.num_dims))
+        d_params = self.param_reshaper.reshape(d_x)
+
+        # Extract shapes
+        treedef = jax.tree_util.tree_structure(d_params)
+        shapes = jax.tree_util.tree_map(lambda p: np.asarray(p.shape), d_params)
+
+        # Random keys
+        rng, param_rng = jax.random.split(rng)
+        keys = jax.tree_util.tree_unflatten(
+            treedef, jax.random.split(param_rng, treedef.num_leaves)
         )
+
+        # Generate noise
+        noise = jax.tree_util.tree_map(jax.random.normal, keys, shapes)
+        scaled_noise = jax.tree_util.tree_map(
+            lambda x: x * state.sigma, noise
+        )
+        
+        z_plus = self.param_reshaper.flatten(scaled_noise)
+        
+        # Antithetic sampling of noise
+        # z_plus = jax.random.normal(
+        #     rng,
+        #     (int(self.popsize / 2), self.num_dims),
+        # )
+        
         z = jnp.concatenate([z_plus, -1.0 * z_plus])
         x = state.mean + state.sigma * z
         return x, state

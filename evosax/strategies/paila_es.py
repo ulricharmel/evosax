@@ -131,16 +131,16 @@ class PailaES(Strategy):
             lambda x: x * state.sigma, noise
         )
         
-        flatten_noise = self.param_reshaper.flatten(scaled_noise)
+        z_plus = self.param_reshaper.flatten(scaled_noise)
 
 
         # Antithetic sampling of noise
-        # noise = jax.random.normal(
+        # z_plus = jax.random.normal(
         #     rng,
         #     (int(self.popsize / 2), self.num_dims),
-        # )*state.sigma
+        # )
         
-        z = jnp.concatenate([flatten_noise, -1.0 * flatten_noise])
+        z = jnp.concatenate([z_plus, -1.0 * z_plus])
         x = state.mean + z
         
         return x, state
