@@ -1,5 +1,6 @@
 import jax
 import jax.numpy as jnp
+import numpy as np
 import chex
 from typing import Tuple, Optional, Union
 from ..strategy import Strategy
