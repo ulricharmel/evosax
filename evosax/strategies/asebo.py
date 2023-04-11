@@ -1,5 +1,6 @@
 import jax
 import jax.numpy as jnp
+import numpy as np
 import chex
 from typing import Tuple, Optional, Union
 from ..strategy import Strategy
@@ -159,7 +160,28 @@ class ASEBO(Strategy):
             + ((1 - state.alpha) / int(self.popsize / 2)) * UUT
         )
         chol = jnp.linalg.cholesky(cov)
-        noise = jax.random.normal(rng, (self.num_dims, int(self.popsize / 2)))
+        
+        #------------------------------------------------------------#
+        d_x = jnp.zeros((int(self.popsize/2), self.num_dims))
+        d_params = self.param_reshaper.reshape(d_x)
+
+        # Extract shapes
+        treedef = jax.tree_util.tree_structure(d_params)
+        shapes = jax.tree_util.tree_map(lambda p: np.asarray(p.shape), d_params)
+
+        # Random keys
+        rng, param_rng = jax.random.split(rng)
+        keys = jax.tree_util.tree_unflatten(
+            treedef, jax.random.split(param_rng, treedef.num_leaves)
+        )
+
+        # Generate noise
+        s_noise = jax.tree_util.tree_map(jax.random.normal, keys, shapes)
+        flatten_noise = self.param_reshaper.flatten(s_noise)
+        noise = flatten_noise.reshape(self.num_dims, int(self.popsize/2))
+
+        # noise = jax.random.normal(rng, (self.num_dims, int(self.popsize / 2)))
+        
         z_plus = jnp.swapaxes(chol @ noise, 0, 1)
         z_plus /= jnp.linalg.norm(z_plus, axis=-1)[:, jnp.newaxis]
         z = jnp.concatenate([z_plus, -1.0 * z_plus])
