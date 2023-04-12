@@ -37,7 +37,7 @@ class PGPE(Strategy):
         popsize: int,
         num_dims: Optional[int] = None,
         pholder_params: Optional[Union[chex.ArrayTree, chex.Array]] = None,
-        elite_ratio: float = 1.0,
+        elite_ratio: float = 0.1,
         opt_name: str = "adam",
         lrate_init: float = 0.15,
         lrate_decay: float = 1.0,
