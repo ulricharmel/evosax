@@ -137,7 +137,7 @@ class ESMC(Strategy):
         noise = (x - state.mean) / state.sigma
         bline_fitness = fitness[0]
         noise = noise[2:]
-        fitness = fitness[1:]
+        fitness = fitness[2:]
         noise_1 = noise[: int((self.popsize - 2) / 2)]
         fit_1 = fitness[: int((self.popsize - 2) / 2)]
         fit_2 = fitness[int((self.popsize - 2) / 2) :]
