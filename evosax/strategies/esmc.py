@@ -59,7 +59,7 @@ class ESMC(Strategy):
             n_devices,
             **fitness_kwargs
         )
-        assert self.popsize & 1, "Population size must be odd"
+        # assert self.popsize & 1, "Population size must be odd"
         assert opt_name in ["sgd", "adam", "rmsprop", "clipup", "adan"]
         self.optimizer = GradientOptimizer[opt_name](self.num_dims)
         self.strategy_name = "ESMC"
@@ -110,15 +110,40 @@ class ESMC(Strategy):
     ) -> Tuple[chex.Array, EvoState]:
         """`ask` for new parameter candidates to evaluate next."""
         # Antithetic sampling of noise
-        z_plus = jax.random.normal(
-            rng,
-            (int(self.popsize / 2), self.num_dims),
+        # z_plus = jax.random.normal(
+        #     rng,
+        #     (int(self.popsize / 2), self.num_dims),
+        # )
+        # z = jnp.concatenate(
+        #     [jnp.zeros((1, self.num_dims)), z_plus, -1.0 * z_plus]
+        # )
+        # x = state.mean + z * state.sigma.reshape(1, self.num_dims)
+
+        # Using antithetic sampling
+        d_x = jnp.zeros((int((self.popsize) / 2), self.num_dims))
+        d_params = self.param_reshaper.reshape(d_x)
+
+        # Extract shapes
+        treedef = jax.tree_util.tree_structure(d_params)
+        shapes = jax.tree_util.tree_map(lambda p: np.asarray(p.shape), d_params)
+
+        # Random keys
+        keys = jax.tree_util.tree_unflatten(
+            treedef, jax.random.split(rng, treedef.num_leaves)
         )
-        z = jnp.concatenate(
-            [jnp.zeros((1, self.num_dims)), z_plus, -1.0 * z_plus]
-        )
-        x = state.mean + z * state.sigma.reshape(1, self.num_dims)
+
+        # Generate noise
+        noise = jax.tree_util.tree_map(jax.random.normal, keys, shapes)
+        scaled_noise = jax.tree_util.tree_map(lambda x: x * state.sigma, noise)
+
+        z_plus = self.param_reshaper.flatten(scaled_noise)
+
+        z = jnp.concatenate([z_plus, -1.0 * z_plus])
+        z = z.at[0:2].set(0)
+        x = state.mean + z * state.sigma
+        
         return x, state
+
 
     def tell_strategy(
         self,
@@ -131,16 +156,16 @@ class ESMC(Strategy):
         # Reconstruct noise from last mean/std estimates
         noise = (x - state.mean) / state.sigma
         bline_fitness = fitness[0]
-        noise = noise[1:]
+        noise = noise[2:]
         fitness = fitness[1:]
-        noise_1 = noise[: int((self.popsize - 1) / 2)]
-        fit_1 = fitness[: int((self.popsize - 1) / 2)]
-        fit_2 = fitness[int((self.popsize - 1) / 2) :]
+        noise_1 = noise[: int((self.popsize - 2) / 2)]
+        fit_1 = fitness[: int((self.popsize - 2) / 2)]
+        fit_2 = fitness[int((self.popsize - 2) / 2) :]
         fit_diff = jnp.minimum(fit_1, bline_fitness) - jnp.minimum(
             fit_2, bline_fitness
         )
         fit_diff_noise = jnp.dot(noise_1.T, fit_diff)
-        theta_grad = 1.0 / int((self.popsize - 1) / 2) * fit_diff_noise
+        theta_grad = 1.0 / int((self.popsize - 2) / 2) * fit_diff_noise
         # Grad update using optimizer instance - decay lrate if desired
         mean, opt_state = self.optimizer.step(
             state.mean, theta_grad, state.opt_state, params.opt_params
