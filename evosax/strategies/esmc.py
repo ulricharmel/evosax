@@ -110,37 +110,16 @@ class ESMC(Strategy):
         self, rng: chex.PRNGKey, state: EvoState, params: EvoParams
     ) -> Tuple[chex.Array, EvoState]:
         """`ask` for new parameter candidates to evaluate next."""
+        
         # Antithetic sampling of noise
-        # z_plus = jax.random.normal(
-        #     rng,
-        #     (int(self.popsize / 2), self.num_dims),
-        # )
-        # z = jnp.concatenate(
-        #     [jnp.zeros((1, self.num_dims)), z_plus, -1.0 * z_plus]
-        # )
-        # x = state.mean + z * state.sigma.reshape(1, self.num_dims)
-
-        # Using antithetic sampling
-        d_x = jnp.zeros((int((self.popsize) / 2), self.num_dims))
-        d_params = self.param_reshaper.reshape(d_x)
-
-        # Extract shapes
-        treedef = jax.tree_util.tree_structure(d_params)
-        shapes = jax.tree_util.tree_map(lambda p: np.asarray(p.shape), d_params)
-
-        # Random keys
-        keys = jax.tree_util.tree_unflatten(
-            treedef, jax.random.split(rng, treedef.num_leaves)
+        z_plus = jax.random.normal(
+            rng,
+            (int((self.popsize-2) / 2), self.num_dims),
         )
-
-        # Generate noise
-        noise = jax.tree_util.tree_map(jax.random.normal, keys, shapes)
-        scaled_noise = jax.tree_util.tree_map(lambda x: x * state.sigma, noise)
-
-        z_plus = self.param_reshaper.flatten(scaled_noise)
-
-        z = jnp.concatenate([z_plus, -1.0 * z_plus])
-        z = z.at[0:2].set(0)
+        z = jnp.concatenate(
+            [jnp.zeros((2, self.num_dims)), z_plus, -1.0 * z_plus]
+        )
+        
         x = state.mean + z * state.sigma
         
         return x, state
